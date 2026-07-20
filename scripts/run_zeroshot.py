@@ -116,19 +116,49 @@ def make_moirai(model_name, device):
 
 
 def make_lag_llama(model_name, device):
+    # PyTorch 2.8: force weights_only=False globally (Lightning's internal load needs it)
+    _orig_load = torch.load
+    def _patched_load(*a, **kw):
+        kw.setdefault("weights_only", False)
+        return _orig_load(*a, **kw)
+    torch.load = _patched_load
+
     from huggingface_hub import snapshot_download
     from lag_llama.gluon.estimator import LagLlamaEstimator
     from gluonts.dataset.common import ListDataset
-    ckpt_path = os.path.join(snapshot_download(model_name), "lag-llama.ckpt")
+    import pandas as pd
+
+    # Prefer local checkpoint if present, else download
+    local_ckpt = "checkpoints/lag-llama.ckpt"
+    ckpt_path = local_ckpt if os.path.exists(local_ckpt) else os.path.join(snapshot_download(model_name), "lag-llama.ckpt")
+
+    # Read exact architecture from checkpoint
+    ckpt = torch.load(ckpt_path, map_location="cpu")
+    hp = ckpt["hyper_parameters"]
+    ea = hp.get("model_kwargs") or hp.get("estimator_args") or hp
+    print(f"[lag-llama] loaded arch: input_size={ea.get('input_size')}, "
+          f"n_layer={ea.get('n_layer')}, n_head={ea.get('n_head')}, "
+          f"n_embd_per_head={ea.get('n_embd_per_head')}, "
+          f"time_feat={ea.get('time_feat')}", flush=True)
+
     estimator = LagLlamaEstimator(
-        ckpt_path=ckpt_path, prediction_length=max(HORIZONS), context_length=DEFAULT_LOOKBACK,
+        ckpt_path=ckpt_path,
+        prediction_length=max(HORIZONS),
+        context_length=DEFAULT_LOOKBACK,
+        input_size=ea["input_size"],
+        n_layer=ea["n_layer"],
+        n_embd_per_head=ea["n_embd_per_head"],
+        n_head=ea["n_head"],
+        scaling=ea.get("scaling", "mean"),
+        time_feat=ea.get("time_feat", True),
+        rope_scaling=ea.get("rope_scaling", None),
         device=torch.device(device), batch_size=1, num_parallel_samples=20,
     )
     predictor = estimator.create_predictor(estimator.create_transformation(), estimator.create_lightning_module())
     max_h = max(HORIZONS)
     def predict(ctx):
-        ds = ListDataset([{"start": "2024-01-01", "target": ctx.astype(np.float32)}], freq="10min")
-        return list(predictor.predict(ds))[0].quantile(0.5)[:max_h]
+        ds = ListDataset([{"start": pd.Period("2024-01-01", freq="10min"), "target": ctx.astype(np.float32)}], freq="10min")
+        return np.asarray(list(predictor.predict(ds))[0].quantile(0.5))[:max_h]
     return predict
 
 

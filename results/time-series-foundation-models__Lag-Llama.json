@@ -1,0 +1,13 @@
+{
+  "model": "time-series-foundation-models/Lag-Llama",
+  "device": "cuda",
+  "n_windows": 1297,
+  "lookback": 288,
+  "mae": {
+    "h=1": 2.570868968963623,
+    "h=6": 3.1331937313079834,
+    "h=36": 3.8612332344055176,
+    "h=144": 4.272268295288086
+  },
+  "runtime_sec": 1018.7
+}
