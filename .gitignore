@@ -1,4 +1,21 @@
-data/*.npy
+# Large binaries
+checkpoints/
+data/
+lightning_logs/
+logs/
+preds/
+
+# Result npy/log files (代码能重新生成)
+results/*.npy
+results/*.log
+
+# Python
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+*.egg-info/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
